@@ -129,9 +129,93 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 //   - object_write    : save that binary buffer to the store as OBJ_TREE
 //
 // Returns 0 on success, -1 on error.
+// Recursive helper to build trees from a sorted subset of index entries.
+// 'prefix_len' tells us how deep we are in the directory structure so we can 
+// ignore parent directory names when creating the local Tree entries.
+static int write_tree_recursive(const IndexEntry *entries, int num_entries, int prefix_len, ObjectID *out_id) {
+    Tree current_tree;
+    current_tree.count = 0;
+
+    int i = 0;
+    while (i < num_entries && current_tree.count < MAX_TREE_ENTRIES) {
+        // Look at the current file path, starting from our current directory depth
+        const char *current_path = entries[i].path + prefix_len;
+        const char *slash = strchr(current_path, '/');
+
+        if (!slash) {
+            // BASE CASE: It's a file in the current directory.
+            TreeEntry *t_entry = &current_tree.entries[current_tree.count++];
+            t_entry->mode = entries[i].mode;
+            strncpy(t_entry->name, current_path, sizeof(t_entry->name) - 1);
+            t_entry->name[sizeof(t_entry->name) - 1] = '\0';
+            t_entry->hash = entries[i].id;
+            i++; 
+        } else {
+            // RECURSIVE CASE: It's a file inside a subdirectory.
+            // We need to group all index entries that belong to this same subdirectory.
+            size_t dir_name_len = slash - current_path;
+            
+            int j = i + 1;
+            // Advance 'j' until we find a file that does NOT belong in this subdirectory
+            while (j < num_entries) {
+                const char *next_path = entries[j].path + prefix_len;
+                if (strncmp(current_path, next_path, dir_name_len) != 0 || next_path[dir_name_len] != '/') {
+                    break;
+                }
+                j++;
+            }
+
+            // 'j - i' is the number of files inside this subdirectory.
+            // We recursively call this function to build the tree for that subdirectory.
+            ObjectID sub_tree_id;
+            int new_prefix_len = prefix_len + dir_name_len + 1; // +1 to skip the slash
+            
+            if (write_tree_recursive(&entries[i], j - i, new_prefix_len, &sub_tree_id) != 0) {
+                return -1;
+            }
+
+            // Now that the subdirectory tree is built and saved, add IT as an entry to our current tree.
+            TreeEntry *t_entry = &current_tree.entries[current_tree.count++];
+            t_entry->mode = MODE_DIR; // 0040000
+            strncpy(t_entry->name, current_path, dir_name_len);
+            t_entry->name[dir_name_len] = '\0';
+            t_entry->hash = sub_tree_id;
+
+            // Move the outer loop index past all the files we just processed in the subfolder
+            i = j;
+        }
+    }
+
+    // 1. Serialize the Tree struct into the binary format expected by Git/PES
+    void *tree_data = NULL;
+    size_t tree_len = 0;
+    if (tree_serialize(&current_tree, &tree_data, &tree_len) != 0) {
+        return -1;
+    }
+
+    // 2. Write the binary tree data to the object store
+    int result = object_write(OBJ_TREE, tree_data, tree_len, out_id);
+    free(tree_data);
+    
+    return result;
+}
+
+
+// Build a tree hierarchy from the current index and write all tree
+// objects to the object store.
 int tree_from_index(ObjectID *id_out) {
-    // TODO: Implement recursive tree building
-    // (See Lab Appendix for logical steps)
-    (void)id_out;
-    return -1;
+    Index idx;
+    if (index_load(&idx) != 0) {
+        return -1;
+    }
+
+    // If the index is empty, we can't create a tree
+    if (idx.count == 0) {
+        fprintf(stderr, "error: nothing to commit (index is empty)\n");
+        return -1;
+    }
+
+    // The index should already be sorted by path (enforced in index_save),
+    // which makes grouping subdirectories in write_tree_recursive possible.
+    return write_tree_recursive(idx.entries, idx.count, 0, id_out);
 }
