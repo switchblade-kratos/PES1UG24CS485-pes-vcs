@@ -220,7 +220,7 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
     new_commit.timestamp = (uint64_t)time(NULL);
 
     // 4. Set the Commit Message
-    strncpy(new_commit.message, message, sizeof(new_commit.message) - 1);
+    strncpy(new_commit.message, , sizeof(new_commit.message) - 1);
     new_commit.message[sizeof(new_commit.message) - 1] = '\0';
 
     // 5. Serialize the Commit struct into a text buffer
