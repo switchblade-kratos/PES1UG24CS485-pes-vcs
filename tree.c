@@ -176,7 +176,7 @@ static int write_tree_recursive(const IndexEntry *entries, int num_entries, int 
 
             // Now that the subdirectory tree is built and saved, add IT as an entry to our current tree.
             TreeEntry *t_entry = &current_tree.entries[current_tree.count++];
-            t_entry->mode =  // 0040000
+            t_entry->mode = MODE_DIR; // 0040000
             strncpy(t_entry->name, current_path, dir_name_len);
             t_entry->name[dir_name_len] = '\0';
             t_entry->hash = sub_tree_id;
