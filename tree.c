@@ -9,6 +9,7 @@
 // Example single entry (conceptual):
 //   "100644 hello.txt\0" followed by 32 raw bytes of SHA-256
 
+#include "pes.h"
 #include "index.h"
 #include "tree.h"
 #include <stdio.h>
@@ -17,6 +18,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
+
 // ─── Mode Constants ─────────────────────────────────────────────────────────
 
 #define MODE_FILE      0100644
@@ -24,6 +27,7 @@
 #define MODE_DIR       0040000
 
 // ─── PROVIDED ───────────────────────────────────────────────────────────────
+
 
 // Determine the object mode for a filesystem path.
 uint32_t get_file_mode(const char *path) {
@@ -149,7 +153,7 @@ static int write_tree_recursive(const IndexEntry *entries, int num_entries, int 
             t_entry->mode = entries[i].mode;
             strncpy(t_entry->name, current_path, sizeof(t_entry->name) - 1);
             t_entry->name[sizeof(t_entry->name) - 1] = '\0';
-            t_entry->hash = entries[i].id;
+            t_entry->hash = entries[i].hash;
             i++; 
         } else {
             // RECURSIVE CASE: It's a file inside a subdirectory.

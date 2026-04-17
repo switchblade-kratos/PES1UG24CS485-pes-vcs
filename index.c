@@ -25,8 +25,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <inttypes.h>
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 
 // Find an index entry by path (linear scan).
 IndexEntry* index_find(Index *index, const char *path) {
@@ -172,17 +174,17 @@ int index_load(Index *index) {
         char hex_hash[HASH_HEX_SIZE + 1];
 
         // Parse: <mode-octal> <64-char-hex-hash> <mtime-seconds> <size> <path>
-        if (sscanf(line, "%o %64s %llu %zu %255[^\n]",
-                   &entry->mode,
-                   hex_hash,
-                   &entry->mtime_sec,
-                   &entry->size,
-                   entry->path) != 5) {
+        if (sscanf(line, "%o %64s %" SCNu64 " %" SCNu32 " %255[^\n]",
+		       &entry->mode,
+		       hex_hash,
+		       &entry->mtime_sec,
+		       &entry->size,
+		       entry->path) != 5) {
             fprintf(stderr, "warning: invalid entry in index, skipping\n");
             continue;
         }
 
-        if (hex_to_hash(hex_hash, &entry->id) != 0) {
+        if (hex_to_hash(hex_hash, &entry->hash) != 0) {
             fprintf(stderr, "warning: invalid hash format in index, skipping\n");
             continue;
         }
@@ -221,14 +223,14 @@ int index_save(const Index *index) {
     for (int i = 0; i < index->count; i++) {
         const IndexEntry *entry = &index->entries[i];
         char hex_hash[HASH_HEX_SIZE + 1];
-        hash_to_hex(&entry->id, hex_hash);
+        hash_to_hex(&entry->hash, hex_hash);
 
-        if (fprintf(f, "%o %s %llu %zu %s\n",
-                    entry->mode,
-                    hex_hash,
-                    entry->mtime_sec,
-                    entry->size,
-                    entry->path) < 0) {
+        if (fprintf(f, "%o %s %" PRIu64 " %" PRIu32 " %s\n",
+		        entry->mode,
+		        hex_hash,
+		        entry->mtime_sec,
+		        entry->size,
+		        entry->path) < 0) {
             fclose(f);
             unlink(temp_path);
             return -1;
@@ -325,7 +327,7 @@ int index_add(Index *index, const char *path) {
     }
 
     // Update the metadata for the entry
-    entry->id = blob_id;
+    entry->hash = blob_id;
     entry->size = st.st_size;
     entry->mtime_sec = (unsigned long long)st.st_mtime;
     

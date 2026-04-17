@@ -108,7 +108,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     // 1. Build the full object: header ("<type> <size>\0") + data
     char header[64];
     int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len);
-    if (header_len < 0 || header_len >= sizeof(header)) return -1;
+    if (header_len < 0 || (size_t)header_len >= sizeof(header)) return -1;
 
     size_t full_len = header_len + 1 + len;
     void *full_data = malloc(full_len);
@@ -138,7 +138,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     mkdir(shard_dir, 0755); 
 
     // 5. Write to a temporary file in the same shard directory
-    char temp_path[512];
+    char temp_path[1024];
     snprintf(temp_path, sizeof(temp_path), "%s/temp_XXXXXX", shard_dir);
     int fd = mkstemp(temp_path);
     if (fd < 0) {
