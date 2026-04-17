@@ -220,26 +220,7 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
     }
     fseek(f, 0, SEEK_SET);
 
-    void *file_data = malloc(file_size);
-    if (!file_data) {
-        fclose(f);
-        return -1;
-    }
-
-    if (fread(file_data, 1, file_size, f) != (size_t)file_size) {
-        free(file_data);
-        fclose(f);
-        return -1;
-    }
-    fclose(f);
-
-    // 3. Verify integrity: recompute SHA-256
-    ObjectID computed_id;
-    compute_hash(file_data, file_size, &computed_id);
-    if (memcmp(id->hash, computed_id.hash, HASH_SIZE) != 0) {
-        free(file_data);
-        return -1; // Hash mismatch (corrupted data)
-    }
+ 
 
     // 4. Parse the header to extract the type string and size
     char *null_byte = memchr(file_data, '\0', file_size);
