@@ -193,9 +193,57 @@ int head_update(const ObjectID *new_commit) {
 //   - head_update       : moves the branch pointer to your new commit
 //
 // Returns 0 on success, -1 on error.
+// Create a new commit from the current staging area.
 int commit_create(const char *message, ObjectID *commit_id_out) {
-    // TODO: Implement commit creation
-    // (See Lab Appendix for logical steps)
-    (void)message; (void)commit_id_out;
-    return -1;
+    Commit new_commit;
+    memset(&new_commit, 0, sizeof(Commit));
+
+    // 1. Build the tree from the current index staging area.
+    // This writes the tree object(s) to the store and gives us the root tree ID.
+    if (tree_from_index(&new_commit.tree) != 0) {
+        fprintf(stderr, "error: failed to build tree from index\n");
+        return -1;
+    }
+
+    // 2. Get the parent commit hash.
+    // If head_read succeeds, it means there's an existing commit history.
+    // If it fails, this is the very first commit (root commit), so has_parent = 0.
+    if (head_read(&new_commit.parent) == 0) {
+        new_commit.has_parent = 1;
+    } else {
+        new_commit.has_parent = 0;
+    }
+
+    // 3. Set Author and Timestamp
+    strncpy(new_commit.author, pes_author(), sizeof(new_commit.author) - 1);
+    new_commit.author[sizeof(new_commit.author) - 1] = '\0';
+    new_commit.timestamp = (uint64_t)time(NULL);
+
+    // 4. Set the Commit Message
+    strncpy(new_commit.message, message, sizeof(new_commit.message) - 1);
+    new_commit.message[sizeof(new_commit.message) - 1] = '\0';
+
+    // 5. Serialize the Commit struct into a text buffer
+    void *commit_data = NULL;
+    size_t commit_len = 0;
+    if (commit_serialize(&new_commit, &commit_data, &commit_len) != 0) {
+        fprintf(stderr, "error: failed to serialize commit\n");
+        return -1;
+    }
+
+    // 6. Write the serialized commit text to the object store as OBJ_COMMIT
+    if (object_write(OBJ_COMMIT, commit_data, commit_len, commit_id_out) != 0) {
+        fprintf(stderr, "error: failed to write commit object\n");
+        free(commit_data);
+        return -1;
+    }
+    free(commit_data);
+
+    // 7. Update the current branch (HEAD) to point to this new commit
+    if (head_update(commit_id_out) != 0) {
+        fprintf(stderr, "error: failed to update HEAD\n");
+        return -1;
+    }
+
+    return 0;
 }
