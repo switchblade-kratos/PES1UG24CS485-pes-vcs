@@ -197,8 +197,86 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 //
 // The caller is responsible for calling free(*data_out).
 // Returns 0 on success, -1 on error (file not found, corrupt, etc.).
+
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out) {
-    // TODO: Implement
-    (void)id; (void)type_out; (void)data_out; (void)len_out;
-    return -1;
+    // 1. Build the file path
+    char path[512];
+    object_path(id, path, sizeof(path));
+
+    // 2. Open and read the entire file
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    if (file_size < 0) {
+        fclose(f);
+        return -1;
+    }
+    fseek(f, 0, SEEK_SET);
+
+    void *file_data = malloc(file_size);
+    if (!file_data) {
+        fclose(f);
+        return -1;
+    }
+
+    if (fread(file_data, 1, file_size, f) != (size_t)file_size) {
+        free(file_data);
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+
+    // 3. Verify integrity: recompute SHA-256
+    ObjectID computed_id;
+    compute_hash(file_data, file_size, &computed_id);
+    if (memcmp(id->hash, computed_id.hash, HASH_SIZE) != 0) {
+        free(file_data);
+        return -1; // Hash mismatch (corrupted data)
+    }
+
+    // 4. Parse the header to extract the type string and size
+    char *null_byte = memchr(file_data, '\0', file_size);
+    if (!null_byte) {
+        free(file_data);
+        return -1; // Invalid format, no null terminator found
+    }
+
+    char type_str[16];
+    size_t parsed_len;
+    if (sscanf((char *)file_data, "%15s %zu", type_str, &parsed_len) != 2) {
+        free(file_data);
+        return -1; // Header format is incorrect
+    }
+
+    if (strcmp(type_str, "blob") == 0) *type_out = OBJ_BLOB;
+    else if (strcmp(type_str, "tree") == 0) *type_out = OBJ_TREE;
+    else if (strcmp(type_str, "commit") == 0) *type_out = OBJ_COMMIT;
+    else {
+        free(file_data);
+        return -1; // Unknown object type
+    }
+
+    // 5. Allocate buffer and copy the data portion
+    size_t header_len = null_byte - (char *)file_data;
+    if ((size_t)file_size - header_len - 1 != parsed_len) {
+        free(file_data);
+        return -1; // Declared size does not match actual payload size
+    }
+
+    void *extracted_data = malloc(parsed_len + 1); // +1 just for safety, though not strictly required for binary data
+    if (!extracted_data) {
+        free(file_data);
+        return -1;
+    }
+
+    memcpy(extracted_data, null_byte + 1, parsed_len);
+    ((char *)extracted_data)[parsed_len] = '\0'; // Optional: null-terminate in case it's a text blob
+
+    *data_out = extracted_data;
+    *len_out = parsed_len;
+
+    free(file_data);
+    return 0;
 }
