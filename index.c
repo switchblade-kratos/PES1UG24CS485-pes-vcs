@@ -324,7 +324,7 @@ int index_add(Index *index, const char *path) {
 
     // Update the metadata for the entry
     entry->id = blob_id;
-    entry->size = st.st_size;
+    entry->size = st.st_size
     entry->mtime_sec = (unsigned long long)st.st_mtime;
     
     // Convert system mode to Git-style mode (executable vs regular)
